@@ -59,6 +59,9 @@ Enable the site:
 
 bashCopyln -s /etc/nginx/sites-available/homeassistant /etc/nginx/sites-enabled/
 
+- Replace all instances of <fqdn> in the file with your domain.
+- Replace 192.168.4.x with your actual server addresses.
+
 Test and restart Nginx:
 
 bashCopynginx -t
