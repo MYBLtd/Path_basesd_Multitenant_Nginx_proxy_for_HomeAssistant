@@ -1,0 +1,145 @@
+server {
+    listen 80;
+    server_name <fqdn>;
+    return 301 https://$server_name$request_uri;
+}
+  
+server {
+    listen 443 ssl;
+    server_name <fqdn>;
+
+    ssl_certificate /etc/nginx/ssl/certificate.crt;
+    ssl_certificate_key /etc/nginx/ssl/certificate.key;
+    
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
+
+    # Common proxy settings
+    proxy_read_timeout 600;
+    proxy_send_timeout 600;
+    proxy_connect_timeout 600;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_buffering off;
+    
+    # API endpoints with WebSocket support for both tenants
+    location /api/ {
+        proxy_pass http://192.168.4.1:8123/api/;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+
+    # Auth token endpoints for both tenants
+    location = /auth/token {
+        proxy_pass http://192.168.4.1:8123/auth/token;
+        proxy_set_header Content-Type $http_content_type;
+        proxy_set_header Origin "https://<fqdn>";
+        proxy_set_header Referer "https://<fqdn>$request_uri";
+    }
+
+    # Auth endpoints for both tenants
+    location /auth/ {
+        proxy_pass http://192.168.4.1:8123/auth/;
+        
+        sub_filter_once off;
+        sub_filter 'redirect_uri=https://<fqdn>/' 'redirect_uri=https://<fqdn>$request_uri';
+        sub_filter 'client_id=https://<fqdn>/' 'client_id=https://<fqdn>$request_uri';
+    }
+
+    # Service worker
+    location = /sw-modern.js {
+        proxy_pass http://192.168.4.1:8123/sw-modern.js;
+        proxy_set_header Content-Type "application/javascript";
+    }
+
+    # Static files with proper MIME types for both tenants
+    location ~ ^/(frontend_|static/|hacsfiles/).*$ {
+        proxy_pass http://192.168.4.1:8123$request_uri;
+        types {
+            application/javascript  js mjs;
+            application/json       json;
+            text/plain            txt;
+            image/svg+xml         svg;
+            image/png            png;
+            image/jpeg           jpg jpeg;
+            image/gif            gif;
+            font/woff2           woff2;
+        }
+        expires 30d;
+        add_header Cache-Control "public";
+    }
+
+    # Tenant 1
+    location /tenant1/ {
+        proxy_pass http://192.168.4.1:8123/;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        
+        sub_filter_once off;
+        sub_filter_types text/html application/javascript;
+        
+        # Common substitutions
+        sub_filter 'href="/' 'href="/tenant1/';
+        sub_filter 'src="/' 'src="/tenant1/';
+        sub_filter 'url("/' 'url("/tenant1/';
+        sub_filter 'import("/' 'import("/tenant1/';
+        sub_filter 'from "/' 'from "/tenant1/';
+        sub_filter '_ls("/' '_ls("/tenant1/';
+        sub_filter '_pf("/' '_pf("/tenant1/';
+        sub_filter 'content="/' 'content="/tenant1/';
+        sub_filter 'customPanelJS="/' 'customPanelJS="/tenant1/';
+        sub_filter 'window.customPanelJS="/' 'window.customPanelJS="/tenant1/';
+        
+        # Auth-related substitutions
+        sub_filter 'client_id=https://' 'client_id=https://<fqdn>/tenant1/';
+        sub_filter 'redirect_uri=https://' 'redirect_uri=https://<fqdn>/tenant1/';
+        
+        # WebSocket URL
+        sub_filter 'wss://' 'wss://<fqdn>/';
+        sub_filter 'ws://' 'wss://<fqdn>/';
+
+        # Static paths
+        sub_filter '/frontend_' '/tenant1/frontend_';
+        sub_filter '/static/' '/tenant1/static/';
+        sub_filter '/hacsfiles/' '/tenant1/hacsfiles/';
+    }
+
+    # Tenant 2
+    location /tenant2/ {
+        proxy_pass http://192.168.4.2:8123/;  # Note the different IP
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        
+        sub_filter_once off;
+        sub_filter_types text/html application/javascript;
+        
+        # Common substitutions
+        sub_filter 'href="/' 'href="/tenant2/';
+        sub_filter 'src="/' 'src="/tenant2/';
+        sub_filter 'url("/' 'url="/tenant2/';
+        sub_filter 'import("/' 'import("/tenant2/';
+        sub_filter 'from "/' 'from "/tenant2/';
+        sub_filter '_ls("/' '_ls("/tenant2/';
+        sub_filter '_pf("/' '_pf("/tenant2/';
+        sub_filter 'content="/' 'content="/tenant2/';
+        sub_filter 'customPanelJS="/' 'customPanelJS="/tenant2/';
+        sub_filter 'window.customPanelJS="/' 'window.customPanelJS="/tenant2/';
+        
+        # Auth-related substitutions
+        sub_filter 'client_id=https://' 'client_id=https://<fqdn>/tenant2/';
+        sub_filter 'redirect_uri=https://' 'redirect_uri=https://<fqdn>/tenant2/';
+        
+        # WebSocket URL
+        sub_filter 'wss://' 'wss://<fqdn>/';
+        sub_filter 'ws://' 'wss://<fqdn>/';
+
+        # Static paths
+        sub_filter '/frontend_' '/tenant2/frontend_';
+        sub_filter '/static/' '/tenant2/static/';
+        sub_filter '/hacsfiles/' '/tenant2/hacsfiles/';
+    }
+}
